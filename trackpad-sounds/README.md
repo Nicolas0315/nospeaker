@@ -12,7 +12,9 @@ cd trackpad-sounds
 ./trackpad-sounds --open        # http://localhost:8765 (--port N to change)
 ```
 
-Modes: theremin, piano, hot & cold (blind search by pitch and rhythm), morse, and a frequency lab.
+Modes: theremin, piano, hot & cold (blind search by pitch and rhythm), morse, a frequency lab, and beat sync
+(detects kick and hi-hat from a file, a shared tab's audio, the mic or a built-in demo beat, and taps the
+trackpad on each hit).
 Without the helper (or without a haptic motor) the page falls back to browser audio.
 
 Safety: the helper listens on loopback only, checks the Host and Origin headers so other websites can't drive it,
