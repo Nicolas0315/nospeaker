@@ -14,7 +14,8 @@ cd trackpad-sounds
 
 Modes: theremin, piano, hot & cold (blind search by pitch and rhythm), morse, a frequency lab, and beat sync
 (detects kick and hi-hat from a file, a shared tab's audio, the mic or a built-in demo beat, and taps the
-trackpad on each hit).
+trackpad on each hit), and an acoustic modem (sends text as a 16-tone differential-FSK sequence with a CRC8;
+the receiver is an AudioWorklet Goertzel detector fed by the mic, with an internal loopback for testing).
 Without the helper (or without a haptic motor) the page falls back to browser audio.
 
 Safety: the helper listens on loopback only, checks the Host and Origin headers so other websites can't drive it,

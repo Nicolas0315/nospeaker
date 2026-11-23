@@ -80,6 +80,7 @@
     <button data-mode="morse" data-tick="1050">モールス</button>
     <button data-mode="sweep" data-tick="1320">周波数ラボ</button>
     <button data-mode="beat" data-tick="1500">ビート連動</button>
+    <button data-mode="modem" data-tick="1700">音響モデム</button>
   </nav>
 
   <!-- THEREMIN -->
@@ -180,6 +181,30 @@
     <p class="lead" style="margin-top:10px">マイクは、トラックパッド自身の音を拾うとフィードバックします。タブの音を拾うときは、共有ダイアログで「タブの音声も共有」にチェックを入れてください。</p>
   </section>
 
+  <!-- ACOUSTIC MODEM -->
+  <section id="m-modem">
+    <p class="lead">文字を音（16トーンのFSK）に変えてトラックパッドで鳴らし、もう1台のMacのマイクで受け取ります。机の上に2台を並べて、無線もケーブルもなしでメッセージを渡す遊びです。1秒あたり約30ビット、つまり数文字／秒。送信側・受信側のタブはどちらも前面に出しておいてください。</p>
+    <div class="row" style="margin-top:0"><b>送る</b></div>
+    <textarea id="textD" maxlength="200">hello from my trackpad</textarea>
+    <div class="row">
+      <label>速さ <input type="range" id="symD" min="70" max="200" value="100"> <span id="symV">100</span> ms/記号 <span id="bpsD" style="color:var(--accent)"></span></label>
+      <button class="btn" id="sendD">送信</button>
+      <button class="btn ghost" id="stopD">中止</button>
+      <span id="progD" style="color:var(--dim);font-size:13px"></span>
+    </div>
+    <div class="row" style="margin-top:18px"><b>受ける</b></div>
+    <div class="row">
+      <button class="btn" id="rxMicD">マイクで待ち受け</button>
+      <button class="btn ghost" id="rxLoopD">内部ループバックで待ち受け（テスト）</button>
+      <button class="btn ghost" id="rxStopD">待ち受け停止</button>
+      <label>しきい値 <input type="range" id="sensD" min="6" max="30" value="14"> <span id="sensV">14</span> dB</label>
+    </div>
+    <canvas class="pad" id="padD" style="height:110px;cursor:default;margin-top:12px"></canvas>
+    <div class="row"><span id="readD" style="color:var(--dim);font-size:13.5px">待機中</span></div>
+    <ul id="logD" style="list-style:none;padding:0;margin:8px 0 0;font:13px/1.8 ui-monospace,monospace"></ul>
+    <p class="lead" style="margin-top:10px">うまくいかないとき: 2台をなるべく同じ机の上に置く／受信側のマイク入力を確認する／速さを遅くする／しきい値を下げる。「ブラウザの音も出す」を入れると、トラックパッドではなくスピーカー経由でも送れます。</p>
+  </section>
+
   <footer>
     仕組み: ブラウザは触覚モーターを直接は鳴らせないので、ローカルの小さなヘルパー(<code>trackpad-sounds</code>)が WebSocket で受けて MultitouchSupport（非公開API）経由でモーターを駆動します。
     原理は <a style="color:var(--accent)" href="https://github.com/os6/nospeaker">os6/nospeaker</a> に学びました。
@@ -260,9 +285,9 @@ const Out = (() => {
   return {
     connect, status,
     get active() { return tones.length > 0; },
-    set(t, l = 1) {
+    set(t, l = 1, immediate = false) {
       tones = t.slice(0, 3); level = clamp(l, 0, 1); dirty = true;
-      requestAnimationFrame(flush);
+      if (immediate) flush(); else requestAnimationFrame(flush);
       if (!keepTimer) keepTimer = setInterval(() => { if (tones.length) send({ t: "keep" }); else { clearInterval(keepTimer); keepTimer = 0; } }, 300);
     },
     stop() { tones = []; level = 0; dirty = false; send({ t: "stop" }); applyAudio(); },
@@ -705,6 +730,182 @@ modes.beat = (() => {
   new ResizeObserver(() => { if (analyser && !raf) draw(0, 0); }).observe(cv);
   window.__beat = { get counts() { return counts; }, start: () => $("#demoB").click() };
   return { leave: stopAll };
+})();
+
+/* --- acoustic modem --- */
+modes.modem = (() => {
+  // 16-FSK, 3 data bits per symbol, differential: tone = (prev + 1 + data) mod 16, so consecutive symbols always
+  // differ and the receiver needs no clock. Frame: preamble (0,15,0,15,0,15,7) + [len][payload][crc8].
+  // Detection runs in an AudioWorklet (Goertzel on 16 tones, 10 ms hop), so it doesn't depend on rAF/timers.
+  const BASE = 1000, STEP = 125, PRE = [0, 15, 0, 15, 0, 15, 7], LOOP_JITTER = 25;
+  let ctx, node = null, sink = null, src = null, stream = null, loop = false, osc = null, oscGain = null, txTok = 0, raf = 0, ready = null;
+  const hzOf = k => BASE + STEP * k;
+
+  const WK = `
+class Det extends AudioWorkletProcessor {
+  constructor() {
+    super();
+    this.L = 8192; this.buf = new Float32Array(this.L); this.pos = 0; this.since = 0;
+    this.win = Math.round(sampleRate * 0.02); this.hop = Math.round(sampleRate * 0.01);
+    this.coef = []; for (let k = 0; k < 16; k++) this.coef.push(2 * Math.cos(2 * Math.PI * (${BASE} + ${STEP} * k) / sampleRate));
+  }
+  process(inputs) {
+    const x = inputs[0] && inputs[0][0];
+    if (!x) return true;
+    for (let j = 0; j < x.length; j++) {
+      this.buf[this.pos] = x[j]; this.pos = (this.pos + 1) % this.L;
+      if (++this.since >= this.hop) { this.since = 0; this.run(); }
+    }
+    return true;
+  }
+  run() {
+    const N = this.win, L = this.L, out = new Float32Array(16);
+    for (let k = 0; k < 16; k++) {
+      let s1 = 0, s2 = 0; const c = this.coef[k];
+      for (let i = 0; i < N; i++) { const s = this.buf[(this.pos - N + i + L) % L] + c * s1 - s2; s2 = s1; s1 = s; }
+      out[k] = s1 * s1 + s2 * s2 - c * s1 * s2;
+    }
+    this.port.postMessage(out);
+  }
+}
+registerProcessor("det", Det);`;
+
+  const crc8 = bytes => { let c = 0; for (const b of bytes) { c ^= b; for (let i = 0; i < 8; i++) c = (c & 0x80) ? ((c << 1) ^ 0x07) & 255 : (c << 1) & 255; } return c; };
+  function encode(text) {
+    const p = [...new TextEncoder().encode(text)].slice(0, 200);
+    const bytes = [p.length, ...p]; bytes.push(crc8(bytes));
+    const bits = []; for (const b of bytes) for (let i = 7; i >= 0; i--) bits.push((b >> i) & 1);
+    while (bits.length % 3) bits.push(0);
+    const syms = [...PRE]; let prev = 7;
+    for (let i = 0; i < bits.length; i += 3) { const t = (prev + 1 + ((bits[i] << 2) | (bits[i + 1] << 1) | bits[i + 2])) % 16; syms.push(t); prev = t; }
+    return syms;
+  }
+
+  async function setup() {
+    if (!ctx) {
+      ctx = new (window.AudioContext || window.webkitAudioContext)();
+      const url = URL.createObjectURL(new Blob([WK], { type: "text/javascript" }));
+      ready = ctx.audioWorklet.addModule(url);
+    }
+    if (ctx.state === "suspended") ctx.resume();
+    await ready;
+    if (!node) {
+      node = new AudioWorkletNode(ctx, "det", { numberOfInputs: 1, numberOfOutputs: 1 });
+      sink = ctx.createGain(); sink.gain.value = 0; node.connect(sink).connect(ctx.destination);   // keeps the node pulled
+      node.port.onmessage = e => onHop(e.data);
+    }
+  }
+
+  /* ---- sender ---- */
+  function emit(k) {
+    if (k === null) Out.stop(); else Out.set([tone(hzOf(k))], 1, true);
+    if (loop && osc) {   // internal loopback, with the helper's ~25 ms segment quantisation emulated
+      setTimeout(() => {
+        const t = ctx.currentTime;
+        if (k === null) oscGain.gain.setTargetAtTime(0, t, 0.002);
+        else { osc.frequency.setValueAtTime(hzOf(k), t); oscGain.gain.setTargetAtTime(0.5, t, 0.002); }
+      }, Math.random() * LOOP_JITTER);
+    }
+  }
+  async function send() {
+    const my = ++txTok, symMs = +$("#symD").value, syms = encode($("#textD").value);
+    const t0 = performance.now();
+    for (let i = 0; i < syms.length; i++) {
+      const wait = t0 + i * symMs - performance.now();
+      if (wait > 0) await sleep(wait);
+      if (my !== txTok) return;
+      emit(syms[i]);
+      $("#progD").textContent = `送信中 ${i + 1}/${syms.length}`;
+    }
+    await sleep(symMs);
+    if (my === txTok) { emit(null); $("#progD").textContent = `送信完了 (${syms.length}記号 / ${(syms.length * symMs / 1000).toFixed(1)}秒)`; }
+  }
+  const rate = () => { const ms = +$("#symD").value; $("#symV").textContent = ms; $("#bpsD").textContent = `≈ ${(3000 / ms).toFixed(0)} bit/s`; };
+  $("#symD").oninput = rate; rate();
+  $("#sensD").oninput = e => $("#sensV").textContent = e.target.value;
+  $("#sendD").onclick = send;
+  $("#stopD").onclick = () => { txTok++; emit(null); $("#progD").textContent = "中止"; };
+
+  /* ---- receiver ---- */
+  let st = "idle", hist = [], prevSym = 15, bits = [], need = 0, lastSym = -1, curCand = -1, run = 0, silent = 0, levels = new Array(16).fill(-120), med = -120, active = false;
+  const trace = [];
+  const log = (txt, bad) => {
+    const li = document.createElement("li"); li.style.color = bad ? "var(--bad)" : "var(--text)";
+    li.textContent = `[${new Date().toLocaleTimeString()}] ${txt}`; $("#logD").prepend(li);
+  };
+  function reset(why) { if (st === "data" && why) log(why, true); st = "idle"; hist = []; bits = []; need = 0; lastSym = -1; }
+  function accept(k) {
+    lastSym = k; trace.push(k); if (trace.length > 400) trace.shift();
+    if (st === "idle") {
+      hist.push(k); if (hist.length > 4) hist.shift();
+      if (hist.length === 4 && hist.join() === "15,0,15,7") { st = "data"; prevSym = 7; bits = []; need = 0; }
+      return;
+    }
+    const d = (k - prevSym - 1 + 32) % 16; prevSym = k;
+    if (d > 7) { reset("受信エラー（ノイズ）"); return; }
+    bits.push((d >> 2) & 1, (d >> 1) & 1, d & 1);
+    if (!need && bits.length >= 8) { const len = parseInt(bits.slice(0, 8).join(""), 2); need = (len + 2) * 8; }
+    if (need && bits.length >= need) {
+      const bytes = []; for (let i = 0; i < need; i += 8) bytes.push(parseInt(bits.slice(i, i + 8).join(""), 2));
+      const body = bytes.slice(0, -1);
+      if (crc8(body) === bytes[bytes.length - 1]) log(`「${new TextDecoder().decode(new Uint8Array(body.slice(1)))}」 ✓ ${body.length - 1}バイト`);
+      else log("CRCが合いません（途中で壊れた）", true);
+      st = "idle"; hist = []; bits = []; need = 0;
+    }
+  }
+  function onHop(p) {
+    if (!active) return;
+    const sorted = Array.from(p).sort((a, b) => a - b), m = sorted[8] + 1e-12;
+    let best = 0; for (let k = 1; k < 16; k++) if (p[k] > p[best]) best = k;
+    const bv = p[best], sv = sorted[14];
+    for (let k = 0; k < 16; k++) levels[k] = 10 * Math.log10(p[k] + 1e-12);
+    med = 10 * Math.log10(m);
+    const ok = bv > 1e-6 && 10 * Math.log10(bv / m) > +$("#sensD").value && bv / (sv + 1e-12) > 4;
+    const cand = ok ? best : -1;
+    if (cand === curCand) run++; else { curCand = cand; run = 1; }
+    if (cand >= 0) { silent = 0; if (run === 3 && cand !== lastSym) accept(cand); }
+    else if (++silent === 40) reset(st === "data" ? "途中で音が途切れました" : "");
+  }
+  function ui() {
+    raf = requestAnimationFrame(ui);
+    draw();
+    $("#readD").textContent = st === "data" ? `受信中… ${Math.floor(bits.length / 3)}記号` : curCand >= 0 ? `信号あり (トーン ${curCand})` : "待機中（無音）";
+  }
+  function draw() {
+    const cv = $("#padD"), { c, w, h } = fitCanvas(cv);
+    c.clearRect(0, 0, w, h);
+    for (let k = 0; k < 16; k++) {
+      const v = clamp((levels[k] - med) / 40, 0, 1) || 0, bw = w / 16;
+      c.fillStyle = k === curCand ? css("--accent") : css("--dim") + "88";
+      c.fillRect(k * bw + 3, h - 16 - v * (h - 30), bw - 6, v * (h - 30) + 2);
+      c.fillStyle = css("--dim"); c.font = "10px ui-monospace, monospace"; c.fillText(hzOf(k), k * bw + 4, h - 3);
+    }
+  }
+  function stopRx() {
+    active = false; cancelAnimationFrame(raf); raf = 0; loop = false;
+    if (src) { try { src.disconnect(); } catch {} src = null; }
+    if (stream) { stream.getTracks().forEach(t => t.stop()); stream = null; }
+    if (osc) { try { osc.stop(); } catch {} osc = null; }
+    reset("");
+  }
+  function beginRx() { curCand = -1; run = 0; silent = 0; active = true; ui(); }
+  $("#rxMicD").onclick = async () => {
+    try {
+      stopRx(); await setup();
+      stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false } });
+      src = ctx.createMediaStreamSource(stream); src.connect(node);
+      beginRx();
+    } catch (e) { $("#readD").textContent = "マイクを使えませんでした: " + e.name; }
+  };
+  $("#rxLoopD").onclick = async () => {
+    stopRx(); await setup(); loop = true;
+    osc = ctx.createOscillator(); oscGain = ctx.createGain(); oscGain.gain.value = 0;
+    osc.connect(oscGain).connect(node); osc.start();
+    beginRx();
+  };
+  $("#rxStopD").onclick = () => { stopRx(); $("#readD").textContent = "待ち受け停止"; };
+  window.__modem = { encode, trace, get loop() { return loop; }, log: () => [...document.querySelectorAll("#logD li")].map(l => l.textContent) };
+  return { enter() { draw(); }, leave() { txTok++; stopRx(); } };
 })();
 
 /* ---------- boot ---------- */
