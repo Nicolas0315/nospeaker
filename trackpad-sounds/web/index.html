@@ -552,7 +552,7 @@ modes.sweep = (() => {
 modes.beat = (() => {
   const cv = $("#padB"), audioEl = $("#audioB");
   let ctx, analyser, monitor, bins, elSrc, streamSrc, stream, raf = 0, demoTimer = 0, demoNext = 0, demoStep = 0, demoBus = null;
-  let hist = { low: [], high: [] }, prev = { low: 0, high: 0 }, lastKick = 0, lastHat = 0, until = 0, offTimer = 0;
+  let hist = { low: [], high: [] }, prev = { low: 0, high: 0 }, prevBins = null, lastKick = 0, lastHat = 0, offTimer = 0;
   let flash = { kick: 0, hat: 0 }, counts = { kick: 0, hat: 0 }, label = "";
 
   function setup() {
@@ -565,11 +565,19 @@ modes.beat = (() => {
   const binHz = () => ctx.sampleRate / analyser.fftSize;
   const mean = (a, b) => { let s = 0; for (let i = a; i < b; i++) s += bins[i]; return s / Math.max(1, b - a); };
 
-  function hit(hz, ms, lvl) {
+  // Voices can overlap (a hat on top of a kick): all live ones are mixed into one actuation.
+  let voices = [];
+  function render() {
     clearTimeout(offTimer);
-    Out.set([tone(hz)], lvl);
-    until = performance.now() + ms;
-    offTimer = setTimeout(() => Out.stop(), ms);
+    const t = performance.now();
+    voices = voices.filter(v => v.end > t);
+    if (!voices.length) { Out.stop(); return; }
+    Out.set(voices.map(v => tone(v.hz, v.amp)), Math.max(...voices.map(v => v.lvl)));
+    offTimer = setTimeout(render, Math.max(4, Math.min(...voices.map(v => v.end)) - t));
+  }
+  function hit(hz, ms, lvl, amp = 1) {
+    voices.push({ hz, amp, lvl, end: performance.now() + ms });
+    render();
   }
   function detect(list, flux, sens) {
     list.push(flux); if (list.length > 43) list.shift();
@@ -581,16 +589,21 @@ modes.beat = (() => {
     analyser.getByteFrequencyData(bins);
     const bh = binHz(), now = performance.now(), sens = +$("#sensB").value;
     const low = mean(Math.max(1, Math.round(30 / bh)), Math.round(170 / bh));
-    const high = mean(Math.round(6000 / bh), Math.round(12000 / bh));
-    const lowFlux = Math.max(0, low - prev.low), highFlux = Math.max(0, high - prev.high);
+    const h0 = Math.round(5000 / bh), h1 = Math.round(14000 / bh);
+    const high = mean(h0, h1);
+    // Hats are noise: use spectral flux over the whole band (sum of per-bin rises) instead of the change in the mean.
+    let hf = 0;
+    if (prevBins) for (let i = h0; i < h1; i++) hf += Math.max(0, bins[i] - prevBins[i]);
+    prevBins = Uint8Array.from(bins);
+    const lowFlux = Math.max(0, low - prev.low), highFlux = hf / (h1 - h0);
     prev = { low, high };
     if (low > 60 && detect(hist.low, lowFlux, sens) && now - lastKick > 130) {
       lastKick = now; counts.kick++; flash.kick = 1;
       hit(+$("#kickB").value, 75, clamp(0.65 + lowFlux / 60, 0.65, 1));
     } else if (!(low > 60)) { hist.low.push(0); if (hist.low.length > 43) hist.low.shift(); }
-    if ($("#hatB").checked && high > 25 && detect(hist.high, highFlux, sens) && now - lastHat > 70 && now > until) {
+    if ($("#hatB").checked && detect(hist.high, highFlux, sens) && highFlux > 3 && now - lastHat > 45) {
       lastHat = now; counts.hat++; flash.hat = 1;
-      hit(3500, 25, 0.7);
+      hit(3500, 28, 0.75, 0.7);
     }
     draw(low, high);
     $("#readB").textContent = `${label}  kick ${counts.kick} / hat ${counts.hat}`;
@@ -618,7 +631,7 @@ modes.beat = (() => {
     if (stream) { stream.getTracks().forEach(t => t.stop()); stream = null; }
   }
   function start(name) {
-    label = name; counts = { kick: 0, hat: 0 }; hist = { low: [], high: [] };
+    label = name; counts = { kick: 0, hat: 0 }; hist = { low: [], high: [] }; prevBins = null; voices = [];
     if (!raf) loop();
   }
   function stopAll() { disconnectAll(); cancelAnimationFrame(raf); raf = 0; clearTimeout(offTimer); Out.stop(); }
