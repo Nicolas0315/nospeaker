@@ -1,0 +1,539 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Trackpad Sounds</title>
+<style>
+  :root {
+    --bg: #101114; --panel: #181a20; --line: #2a2d36; --text: #e8e9ee; --dim: #8b8f9c;
+    --accent: #ffb454; --accent2: #6ee7b7; --bad: #ff6b6b;
+  }
+  :root[data-theme="light"] {
+    --bg: #f4f3ef; --panel: #fff; --line: #dcdad2; --text: #1d1e22; --dim: #6b6e78;
+    --accent: #c76a00; --accent2: #0a8f63; --bad: #d23b3b;
+  }
+  @media (prefers-color-scheme: light) {
+    :root:not([data-theme="dark"]) {
+      --bg: #f4f3ef; --panel: #fff; --line: #dcdad2; --text: #1d1e22; --dim: #6b6e78;
+      --accent: #c76a00; --accent2: #0a8f63; --bad: #d23b3b;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.6 -apple-system, "Hiragino Sans", sans-serif; }
+  main { max-width: 920px; margin: 0 auto; padding: 20px 16px 60px; }
+  h1 { font: 700 22px/1.2 ui-monospace, "SF Mono", monospace; margin: 0; letter-spacing: .02em; }
+  h1 small { color: var(--dim); font-weight: 400; font-size: 13px; margin-left: 8px; }
+  header { display: flex; flex-wrap: wrap; gap: 12px 20px; align-items: center; justify-content: space-between; margin-bottom: 14px; }
+  .opts { display: flex; flex-wrap: wrap; gap: 6px 16px; align-items: center; color: var(--dim); font-size: 13px; }
+  .opts label { display: inline-flex; gap: 6px; align-items: center; cursor: pointer; }
+  #status { font: 12px ui-monospace, monospace; padding: 3px 10px; border-radius: 99px; border: 1px solid var(--line); color: var(--dim); }
+  #status.ok { color: var(--accent2); border-color: var(--accent2); }
+  #status.ng { color: var(--bad); border-color: var(--bad); }
+  #hint { display: none; background: var(--panel); border: 1px solid var(--line); border-left: 3px solid var(--bad); border-radius: 8px; padding: 10px 14px; margin-bottom: 14px; font-size: 13px; color: var(--dim); }
+  code, kbd { font: 12.5px ui-monospace, "SF Mono", monospace; background: var(--panel); border: 1px solid var(--line); border-radius: 4px; padding: 1px 6px; }
+  nav { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 14px; }
+  nav button { background: var(--panel); color: var(--text); border: 1px solid var(--line); border-radius: 8px; padding: 7px 14px; font: inherit; cursor: pointer; }
+  nav button[aria-selected="true"] { border-color: var(--accent); color: var(--accent); }
+  section { display: none; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 16px; }
+  section.on { display: block; }
+  section p.lead { margin: 0 0 12px; color: var(--dim); font-size: 13.5px; }
+  canvas.pad { width: 100%; height: 340px; border-radius: 10px; border: 1px solid var(--line); background: var(--bg); touch-action: none; display: block; cursor: crosshair; }
+  .row { display: flex; flex-wrap: wrap; gap: 10px 18px; align-items: center; margin: 12px 0 0; }
+  .row label { color: var(--dim); font-size: 13px; display: inline-flex; gap: 8px; align-items: center; }
+  select, input[type=text], textarea, input[type=range] { font: inherit; color: var(--text); background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 5px 8px; }
+  input[type=range] { padding: 0; accent-color: var(--accent); }
+  textarea { width: 100%; min-height: 70px; }
+  button.btn { background: var(--accent); color: #1a1205; border: 0; border-radius: 8px; padding: 8px 16px; font: 600 14px inherit; font-family: inherit; cursor: pointer; }
+  button.btn.ghost { background: transparent; color: var(--text); border: 1px solid var(--line); }
+  .read { font: 600 20px ui-monospace, monospace; color: var(--accent); min-width: 190px; }
+  .keys { position: relative; height: 150px; margin-top: 4px; user-select: none; touch-action: none; }
+  .key { position: absolute; top: 0; border: 1px solid var(--line); border-radius: 0 0 6px 6px; cursor: pointer; display: flex; align-items: flex-end; justify-content: center; padding-bottom: 6px; font: 11px ui-monospace, monospace; }
+  .key.w { background: #f3f1ea; color: #555; height: 150px; }
+  .key.b { background: #23252c; color: #aaa; height: 92px; z-index: 2; border-color: #000; }
+  .key.down { background: var(--accent) !important; color: #1a1205; }
+  .morse { font: 18px ui-monospace, monospace; letter-spacing: .15em; color: var(--accent); min-height: 30px; word-break: break-all; }
+  ul.marks { list-style: none; padding: 0; margin: 12px 0 0; display: flex; flex-wrap: wrap; gap: 6px; }
+  ul.marks button { background: var(--bg); color: var(--text); border: 1px solid var(--line); border-radius: 99px; padding: 3px 12px; font: 12px ui-monospace, monospace; cursor: pointer; }
+  footer { margin-top: 22px; color: var(--dim); font-size: 12.5px; }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>Trackpad Sounds<small>ミュートしたまま、トラックパッドで遊ぶ</small></h1>
+    <span id="status">接続中…</span>
+  </header>
+
+  <div id="hint">ヘルパーに繋がっていません。ターミナルで <code>./trackpad-sounds --open</code> を起動してください（それまではブラウザの音で代用します）。</div>
+
+  <div class="opts" style="margin-bottom:14px">
+    <label><input type="checkbox" id="mirror"> ブラウザの音も出す（比較用）</label>
+    <label><input type="checkbox" id="ticks" checked> ボタンに乗せると鳴る</label>
+    <span>机の上に置くと音が大きくなります。膝の上だと小さい。</span>
+  </div>
+
+  <nav id="tabs" role="tablist">
+    <button data-mode="theremin" data-tick="520">テルミン</button>
+    <button data-mode="piano" data-tick="660">ピアノ</button>
+    <button data-mode="hot" data-tick="830">ホット&amp;コールド</button>
+    <button data-mode="morse" data-tick="1050">モールス</button>
+    <button data-mode="sweep" data-tick="1320">周波数ラボ</button>
+  </nav>
+
+  <!-- THEREMIN -->
+  <section id="m-theremin">
+    <p class="lead">パッドの上でポインタを動かす。左右で音の高さ、上下で音量。トラックパッドに指を置いたまま、指先で鳴る音を感じてみてください。</p>
+    <canvas class="pad" id="padT"></canvas>
+    <div class="row">
+      <span class="read" id="readT">—</span>
+      <label>音階
+        <select id="scaleT">
+          <option value="free">なめらか</option>
+          <option value="chromatic">半音</option>
+          <option value="pentatonic" selected>ペンタトニック</option>
+          <option value="major">長音階</option>
+        </select>
+      </label>
+      <label><input type="checkbox" id="vibT" checked> ビブラート</label>
+      <label><input type="checkbox" id="clickT"> クリック中だけ鳴らす</label>
+    </div>
+  </section>
+
+  <!-- PIANO -->
+  <section id="m-piano">
+    <p class="lead">鍵盤をクリック、またはキーボードで演奏。<kbd>A W S E D F T G Y H U J K O L P ;</kbd> が C5〜E6。<kbd>Z</kbd>/<kbd>X</kbd> でオクターブ移動。同時に3音まで（音が増えるほど1音あたりは弱くなります）。</p>
+    <div class="keys" id="keys"></div>
+    <div class="row">
+      <span class="read" id="readP">オクターブ 0</span>
+      <button class="btn" id="twinkle">きらきら星</button>
+      <button class="btn ghost" id="stopP">止める</button>
+    </div>
+  </section>
+
+  <!-- HOT & COLD -->
+  <section id="m-hot">
+    <p class="lead">パッドのどこかに「音の宝物」が隠れています。画面は見ずに、ポインタを動かして音の高さとリズムだけで探す。近いほど高く、速くなる。見つけたらクリック。</p>
+    <canvas class="pad" id="padH"></canvas>
+    <div class="row">
+      <span class="read" id="readH">クリックで開始</span>
+      <label><input type="checkbox" id="peekH"> 距離を画面にも表示（ズル）</label>
+      <button class="btn ghost" id="newH">新しい宝物</button>
+    </div>
+  </section>
+
+  <!-- MORSE -->
+  <section id="m-morse">
+    <p class="lead">文字をモールス信号にして、トラックパッドで打ちます。机の上でそっと指を置いて。</p>
+    <textarea id="textM">SOS TRACKPAD</textarea>
+    <div class="morse" id="outM"></div>
+    <div class="row">
+      <label>速さ <input type="range" id="wpmM" min="5" max="30" value="14"> <span id="wpmV">14</span> WPM</label>
+      <label>高さ <input type="range" id="freqM" min="400" max="2000" value="1000"> <span id="freqV">1000</span> Hz</label>
+      <button class="btn" id="playM">再生</button>
+      <button class="btn ghost" id="stopM">止める</button>
+    </div>
+  </section>
+
+  <!-- SWEEP LAB -->
+  <section id="m-sweep">
+    <p class="lead">100Hz から 4kHz までを滑らせて、トラックパッドの「鳴りやすい所／鳴らない所」を探す実験室。強く感じた所で <kbd>Space</kbd> またはマークを押すと記録されます。</p>
+    <div class="row" style="margin-top:0">
+      <span class="read" id="readS">—</span>
+    </div>
+    <div class="row">
+      <label>周波数 <input type="range" id="slideS" min="0" max="1000" value="500" style="width:260px"></label>
+      <button class="btn ghost" id="holdS">押している間鳴らす</button>
+    </div>
+    <div class="row">
+      <label>スイープ時間 <input type="range" id="durS" min="5" max="40" value="20"> <span id="durV">20</span> 秒</label>
+      <button class="btn" id="sweepS">スイープ開始</button>
+      <button class="btn ghost" id="stopS">止める</button>
+      <button class="btn ghost" id="markS">マーク (Space)</button>
+      <button class="btn ghost" id="clearS">記録を消す</button>
+    </div>
+    <ul class="marks" id="marks"></ul>
+  </section>
+
+  <footer>
+    仕組み: ブラウザは触覚モーターを直接は鳴らせないので、ローカルの小さなヘルパー(<code>trackpad-sounds</code>)が WebSocket で受けて MultitouchSupport（非公開API）経由でモーターを駆動します。
+    原理は <a style="color:var(--accent)" href="https://github.com/os6/nospeaker">os6/nospeaker</a> に学びました。
+  </footer>
+</main>
+
+<script>
+"use strict";
+const $ = s => document.querySelector(s);
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+const LO = 131, HI = 3951;
+const midiHz = n => 440 * 2 ** ((n - 69) / 12);
+const hzMidi = hz => 69 + 12 * Math.log2(hz / 440);
+const NAMES = ["C","C#","D","D#","E","F","F#","G","G#","A","A#","B"];
+const noteName = m => NAMES[((Math.round(m) % 12) + 12) % 12] + (Math.floor(Math.round(m) / 12) - 1);
+const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
+const store = {
+  get(k, d) { try { const v = localStorage.getItem(k); return v === null ? d : JSON.parse(v); } catch { return d; } },
+  set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} },
+};
+
+/* ---------- output: trackpad via helper, optional / fallback WebAudio ---------- */
+const Out = (() => {
+  let ws, connected = false, motor = false, info = "";
+  let tones = [], level = 0, dirty = false, keepTimer = 0;
+  let actx = null, oscs = [], gains = [];
+
+  const audioOn = () => $("#mirror").checked || !motor;
+
+  function status() {
+    const el = $("#status");
+    if (!connected) { el.textContent = "ヘルパー未接続"; el.className = "ng"; }
+    else if (!motor) { el.textContent = "ヘルパー接続 / モーターなし: " + info; el.className = "ng"; }
+    else { el.textContent = "トラックパッド接続OK (" + info + ")"; el.className = "ok"; }
+    $("#hint").style.display = connected ? "none" : "block";
+  }
+
+  function connect() {
+    ws = new WebSocket(`ws://${location.host}/ws`);
+    ws.onopen = () => { connected = true; status(); };
+    ws.onmessage = e => { try { const m = JSON.parse(e.data); if (m.t === "hello") { motor = !!m.motor; info = m.info || ""; status(); } } catch {} };
+    ws.onclose = () => { connected = false; motor = false; status(); setTimeout(connect, 1500); };
+  }
+  const send = o => { if (ws && ws.readyState === 1) ws.send(JSON.stringify(o)); };
+
+  function ensureAudio() {
+    if (!actx) {
+      const AC = window.AudioContext || window.webkitAudioContext;
+      if (!AC) return false;
+      actx = new AC();
+      for (let i = 0; i < 3; i++) {
+        const o = actx.createOscillator(), g = actx.createGain();
+        o.type = "sine"; g.gain.value = 0; o.connect(g).connect(actx.destination); o.start();
+        oscs.push(o); gains.push(g);
+      }
+    }
+    if (actx.state === "suspended") actx.resume();
+    return true;
+  }
+  function applyAudio() {
+    if (!actx) return;
+    const on = audioOn() && tones.length > 0;
+    const t = actx.currentTime;
+    for (let i = 0; i < 3; i++) {
+      const tone = on ? tones[i] : null;
+      if (tone) oscs[i].frequency.setTargetAtTime(tone.hz, t, 0.01);
+      gains[i].gain.setTargetAtTime(tone ? 0.18 * level / tones.length : 0, t, 0.015);
+    }
+  }
+  function flush() {
+    if (!dirty) return;
+    dirty = false;
+    if (tones.length) send({ t: "tones", tones, level }); else send({ t: "stop" });
+    if (audioOn()) ensureAudio();
+    applyAudio();
+  }
+
+  return {
+    connect, status,
+    get active() { return tones.length > 0; },
+    set(t, l = 1) {
+      tones = t.slice(0, 3); level = clamp(l, 0, 1); dirty = true;
+      requestAnimationFrame(flush);
+      if (!keepTimer) keepTimer = setInterval(() => { if (tones.length) send({ t: "keep" }); else { clearInterval(keepTimer); keepTimer = 0; } }, 300);
+    },
+    stop() { tones = []; level = 0; dirty = false; send({ t: "stop" }); applyAudio(); },
+    async burst(hz, ms = 30, l = 0.9) { if (this.active) return; this.set([{ hz, amp: 1 }], l); await sleep(ms); if (tones.length === 1 && tones[0].hz === hz) this.stop(); },
+  };
+})();
+const tone = (hz, amp = 1) => ({ hz, amp });
+
+/* sequences (cancelable) */
+let seqToken = 0;
+async function playSeq(events) {
+  const my = ++seqToken;
+  for (const ev of events) {
+    if (my !== seqToken) return;
+    if (ev.hz) Out.set(ev.hz.map(h => tone(h)), ev.level ?? 1); else Out.stop();
+    await sleep(ev.ms);
+  }
+  if (my === seqToken) Out.stop();
+}
+function cancelAll() { seqToken++; Out.stop(); modes[current]?.leave?.(); }
+
+/* ---------- modes ---------- */
+const modes = {};
+let current = null;
+
+function setMode(name) {
+  if (current) { seqToken++; Out.stop(); modes[current].leave?.(); }
+  current = name;
+  document.querySelectorAll("nav button").forEach(b => b.setAttribute("aria-selected", b.dataset.mode === name));
+  document.querySelectorAll("section").forEach(s => s.classList.toggle("on", s.id === "m-" + name));
+  store.set("mode", name);
+  modes[name].enter?.();
+}
+
+/* canvas helper */
+function fitCanvas(cv) {
+  const r = cv.getBoundingClientRect(), d = window.devicePixelRatio || 1;
+  cv.width = Math.round(r.width * d); cv.height = Math.round(r.height * d);
+  const c = cv.getContext("2d"); c.setTransform(d, 0, 0, d, 0, 0);
+  return { c, w: r.width, h: r.height };
+}
+const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+
+/* --- theremin --- */
+modes.theremin = (() => {
+  const cv = $("#padT");
+  let pos = null, active = false;
+  const SC = { chromatic: [0,1,2,3,4,5,6,7,8,9,10,11], pentatonic: [0,2,4,7,9], major: [0,2,4,5,7,9,11] };
+  function snap(hz) {
+    const sc = $("#scaleT").value;
+    if (sc === "free") return hz;
+    const m = hzMidi(hz), allowed = SC[sc];
+    for (let d = 0; d < 7; d++) for (const s of [Math.round(m) - d, Math.round(m) + d]) if (allowed.includes(((s % 12) + 12) % 12)) return midiHz(s);
+    return hz;
+  }
+  function draw() {
+    const { c, w, h } = fitCanvas(cv);
+    c.clearRect(0, 0, w, h);
+    const g = c.createLinearGradient(0, 0, 0, h);
+    g.addColorStop(0, css("--accent") + "33"); g.addColorStop(1, "transparent");
+    c.fillStyle = g; c.fillRect(0, 0, w, h);
+    c.font = "11px ui-monospace, monospace"; c.textBaseline = "top";
+    for (let m = 48; m <= 107; m++) {
+      const hz = midiHz(m); if (hz < LO || hz > HI) continue;
+      const x = Math.log(hz / LO) / Math.log(HI / LO) * w, isC = m % 12 === 0;
+      c.strokeStyle = isC ? css("--dim") + "88" : css("--line"); c.lineWidth = 1;
+      c.beginPath(); c.moveTo(x, 0); c.lineTo(x, h); c.stroke();
+      if (isC) { c.fillStyle = css("--dim"); c.fillText(noteName(m), x + 3, 4); }
+    }
+    if (pos) {
+      c.fillStyle = css("--accent"); c.globalAlpha = active ? 1 : .35;
+      c.beginPath(); c.arc(pos.x, pos.y, 8 + 14 * (1 - pos.y / h), 0, 7); c.fill(); c.globalAlpha = 1;
+    }
+  }
+  let vibT = 0;
+  function update(e) {
+    const r = cv.getBoundingClientRect();
+    const x = clamp((e.clientX - r.left) / r.width, 0, 1), y = clamp((e.clientY - r.top) / r.height, 0, 1);
+    pos = { x: x * r.width, y: y * r.height };
+    let hz = snap(LO * (HI / LO) ** x);
+    const lvl = clamp(1 - y * 0.85, 0.12, 1);
+    if ($("#vibT").checked) { const ph = performance.now() / 1000; hz *= 2 ** (0.25 * Math.sin(2 * Math.PI * 5.8 * ph) / 12); }
+    $("#readT").textContent = `${noteName(hzMidi(hz))}  ${Math.round(hz)} Hz`;
+    Out.set([tone(hz)], lvl);
+    draw();
+  }
+  function on(e) { active = true; update(e); }
+  function off() { active = false; Out.stop(); draw(); $("#readT").textContent = "—"; }
+  cv.addEventListener("pointerenter", e => { if (!$("#clickT").checked) on(e); });
+  cv.addEventListener("pointermove", e => { if (active) update(e); else { const r = cv.getBoundingClientRect(); pos = { x: e.clientX - r.left, y: e.clientY - r.top }; } });
+  cv.addEventListener("pointerleave", () => { if (active) off(); });
+  cv.addEventListener("pointerdown", e => { if ($("#clickT").checked) { cv.setPointerCapture(e.pointerId); on(e); } });
+  cv.addEventListener("pointerup", () => { if ($("#clickT").checked && active) off(); });
+  // keep vibrato alive even when the pointer rests
+  setInterval(() => { if (active && $("#vibT").checked && lastE) update(lastE); }, 40);
+  let lastE = null;
+  cv.addEventListener("pointermove", e => lastE = e);
+  cv.addEventListener("pointerenter", e => lastE = e);
+  new ResizeObserver(draw).observe(cv);
+  return { enter: draw, leave() { active = false; draw(); } };
+})();
+
+/* --- piano --- */
+modes.piano = (() => {
+  const box = $("#keys");
+  const BASE = 72; // C5
+  const COUNT = 17; // C5..E6
+  const keyMap = "awsedftgyhujkolp;".split("");
+  let octave = 0, held = []; // [{id, midi}]
+  const els = [];
+  const isBlack = i => [1,3,6,8,10].includes(i % 12);
+  const whiteIdx = i => { let n = 0; for (let k = 0; k < i; k++) if (!isBlack(k)) n++; return n; };
+  const whites = Array.from({ length: COUNT }, (_, i) => i).filter(i => !isBlack(i)).length;
+  for (let i = 0; i < COUNT; i++) {
+    const el = document.createElement("div");
+    el.className = "key " + (isBlack(i) ? "b" : "w");
+    el.textContent = keyMap[i].toUpperCase();
+    const ww = 100 / whites;
+    if (isBlack(i)) { el.style.left = `calc(${(whiteIdx(i)) * ww}% - ${ww * 0.3}%)`; el.style.width = `${ww * 0.6}%`; }
+    else { el.style.left = `${whiteIdx(i) * ww}%`; el.style.width = `${ww}%`; }
+    el.dataset.i = i;
+    box.appendChild(el); els.push(el);
+  }
+  const midiOf = i => BASE + i + octave * 12;
+  function refresh() {
+    const t = held.slice(-3).map(h => tone(midiHz(h.midi)));
+    els.forEach((el, i) => el.classList.toggle("down", held.some(h => h.id.endsWith(":" + i))));
+    if (t.length) Out.set(t, 1); else Out.stop();
+    $("#readP").textContent = held.length ? held.slice(-3).map(h => noteName(h.midi)).join(" ") : `オクターブ ${octave >= 0 ? "+" : ""}${octave}`;
+  }
+  const press = (id, i) => { if (!held.some(h => h.id === id)) { held.push({ id, midi: midiOf(i) }); refresh(); } };
+  const release = id => { held = held.filter(h => h.id !== id); refresh(); };
+  box.addEventListener("pointerdown", e => { const k = e.target.closest(".key"); if (!k) return; box.setPointerCapture(e.pointerId); box._cur = "m:" + k.dataset.i; press(box._cur, +k.dataset.i); });
+  box.addEventListener("pointermove", e => {
+    if (!box._cur) return;
+    const k = document.elementFromPoint(e.clientX, e.clientY)?.closest?.(".key");
+    const id = k ? "m:" + k.dataset.i : null;
+    if (id && id !== box._cur) { release(box._cur); box._cur = id; press(id, +k.dataset.i); }
+  });
+  const up = () => { if (box._cur) { release(box._cur); box._cur = null; } };
+  box.addEventListener("pointerup", up); box.addEventListener("pointercancel", up);
+  window.addEventListener("keydown", e => {
+    if (current !== "piano" || e.repeat || e.metaKey || e.ctrlKey || e.target.matches("input,textarea,select")) return;
+    const k = e.key.toLowerCase();
+    if (k === "z") { octave = Math.max(-1, octave - 1); refresh(); return; }
+    if (k === "x") { octave = Math.min(1, octave + 1); refresh(); return; }
+    const i = keyMap.indexOf(k);
+    if (i >= 0) { e.preventDefault(); press("k:" + i, i); }
+  });
+  window.addEventListener("keyup", e => {
+    if (current !== "piano") return;
+    const i = keyMap.indexOf(e.key.toLowerCase());
+    if (i >= 0) release("k:" + i);
+  });
+  $("#twinkle").onclick = async () => {
+    const C = 72, n = [0,0,7,7,9,9,7, 5,5,4,4,2,2,0], bpm = 112, beat = 60000 / bpm;
+    const ev = [];
+    n.forEach((s, i) => {
+      const long = i === 6 || i === 13;
+      ev.push({ hz: [midiHz(C + s)], ms: beat * (long ? 2 : 1) * 0.85 });
+      ev.push({ hz: null, ms: beat * (long ? 2 : 1) * 0.15 });
+    });
+    playSeq(ev);
+  };
+  $("#stopP").onclick = () => { seqToken++; held = []; refresh(); };
+  return { leave() { held = []; box._cur = null; els.forEach(e => e.classList.remove("down")); } };
+})();
+
+/* --- hot & cold --- */
+modes.hot = (() => {
+  const cv = $("#padH");
+  let target = { x: .5, y: .5 }, pos = null, tries = 0, startT = 0, running = false, d = 1, pulseTimer = 0, won = false;
+  const newTarget = () => { target = { x: .08 + Math.random() * .84, y: .08 + Math.random() * .84 }; tries = 0; startT = 0; won = false; $("#readH").textContent = "クリックで開始"; draw(); };
+  function dist(e) {
+    const r = cv.getBoundingClientRect();
+    const x = (e.clientX - r.left) / r.width, y = (e.clientY - r.top) / r.height;
+    // distance in "square" units so the pad's aspect ratio doesn't skew it
+    const dx = (x - target.x) * r.width, dy = (y - target.y) * r.height;
+    return { x: x * r.width, y: y * r.height, d: Math.hypot(dx, dy) / Math.hypot(r.width, r.height) };
+  }
+  function pulse() {
+    clearTimeout(pulseTimer);
+    if (!running || won) return;
+    const near = clamp(1 - d * 2.2, 0, 1);
+    const hz = 260 + near ** 1.4 * 2700;
+    Out.burst(hz, 55, 1);
+    pulseTimer = setTimeout(pulse, 70 + (1 - near) * 650);
+  }
+  function draw() {
+    const { c, w, h } = fitCanvas(cv);
+    c.clearRect(0, 0, w, h);
+    if (pos && $("#peekH").checked) {
+      c.fillStyle = css("--accent") + Math.round(clamp(1 - d * 2.2, 0, 1) * 90 + 10).toString(16).padStart(2, "0");
+      c.fillRect(0, 0, w, h);
+    }
+    if (won || $("#peekH").checked) {
+      c.strokeStyle = css("--accent2"); c.lineWidth = 3;
+      c.beginPath(); c.arc(target.x * w, target.y * h, 16, 0, 7); c.stroke();
+    }
+    if (pos) { c.fillStyle = css("--dim"); c.beginPath(); c.arc(pos.x, pos.y, 4, 0, 7); c.fill(); }
+  }
+  cv.addEventListener("pointerenter", e => { const o = dist(e); pos = o; d = o.d; running = true; pulse(); });
+  cv.addEventListener("pointermove", e => { const o = dist(e); pos = o; d = o.d; if (!won) draw(); });
+  cv.addEventListener("pointerleave", () => { running = false; clearTimeout(pulseTimer); });
+  cv.addEventListener("pointerdown", async e => {
+    if (won) { newTarget(); return; }
+    if (!startT) startT = performance.now();
+    const o = dist(e); tries++;
+    if (o.d < 0.035) {
+      won = true; running = false; draw();
+      const sec = ((performance.now() - startT) / 1000).toFixed(1);
+      $("#readH").textContent = `見つけた！ ${tries}回 / ${sec}秒（もう一度クリックで次へ）`;
+      playSeq([523, 659, 784, 1047, 1319].map(f => ({ hz: [f], ms: 110 })));
+    } else {
+      $("#readH").textContent = `はずれ… ${tries}回目`;
+      Out.burst(180, 160, 1);
+    }
+  });
+  $("#newH").onclick = newTarget;
+  $("#peekH").onchange = draw;
+  new ResizeObserver(draw).observe(cv);
+  return { enter: newTarget, leave() { running = false; clearTimeout(pulseTimer); } };
+})();
+
+/* --- morse --- */
+modes.morse = (() => {
+  const T = { A:".-",B:"-...",C:"-.-.",D:"-..",E:".",F:"..-.",G:"--.",H:"....",I:"..",J:".---",K:"-.-",L:".-..",M:"--",N:"-.",O:"---",P:".--.",Q:"--.-",R:".-.",S:"...",T:"-",U:"..-",V:"...-",W:".--",X:"-..-",Y:"-.--",Z:"--..",
+    0:"-----",1:".----",2:"..---",3:"...--",4:"....-",5:".....",6:"-....",7:"--...",8:"---..",9:"----.",".":".-.-.-",",":"--..--","?":"..--..","!":"-.-.--","-":"-....-","/":"-..-." };
+  function morse(text) { return text.toUpperCase().split(/\s+/).filter(Boolean).map(w => [...w].map(ch => T[ch]).filter(Boolean).join(" ")).join("  /  "); }
+  const show = () => { $("#outM").textContent = morse($("#textM").value); };
+  $("#textM").oninput = show;
+  $("#wpmM").oninput = e => $("#wpmV").textContent = e.target.value;
+  $("#freqM").oninput = e => $("#freqV").textContent = e.target.value;
+  $("#playM").onclick = () => {
+    const u = 1200 / +$("#wpmM").value, f = +$("#freqM").value, ev = [];
+    const words = $("#textM").value.toUpperCase().split(/\s+/).filter(Boolean);
+    words.forEach((w, wi) => {
+      [...w].forEach((ch, ci) => {
+        const code = T[ch]; if (!code) return;
+        [...code].forEach((s, si) => { ev.push({ hz: [f], ms: s === "." ? u : 3 * u }); ev.push({ hz: null, ms: u }); });
+        ev.push({ hz: null, ms: 2 * u });
+      });
+      ev.push({ hz: null, ms: 4 * u });
+    });
+    playSeq(ev);
+  };
+  $("#stopM").onclick = () => { seqToken++; Out.stop(); };
+  return { enter: show };
+})();
+
+/* --- sweep lab --- */
+modes.sweep = (() => {
+  let marks = store.get("marks", []);
+  let sweeping = 0, curHz = 500;
+  const posToHz = p => 100 * 40 ** (p / 1000);   // 100 .. 4000 Hz
+  const hzToPos = hz => 1000 * Math.log(hz / 100) / Math.log(40);
+  const show = hz => { curHz = hz; $("#readS").textContent = `${Math.round(hz)} Hz   ${noteName(hzMidi(hz))}`; };
+  function renderMarks() {
+    const ul = $("#marks"); ul.innerHTML = "";
+    marks.forEach(hz => { const li = document.createElement("li"), b = document.createElement("button"); b.textContent = `${hz} Hz`; b.onclick = () => { show(hz); playSeq([{ hz: [hz], ms: 1200 }]); }; li.appendChild(b); ul.appendChild(li); });
+  }
+  function mark() { const hz = Math.round(curHz); if (!marks.includes(hz)) { marks.push(hz); marks.sort((a, b) => a - b); store.set("marks", marks); renderMarks(); } }
+  $("#slideS").oninput = e => { const hz = posToHz(+e.target.value); show(hz); if (held) Out.set([tone(hz)], 1); };
+  let held = false;
+  const hold = $("#holdS");
+  hold.addEventListener("pointerdown", e => { hold.setPointerCapture(e.pointerId); held = true; Out.set([tone(posToHz(+$("#slideS").value))], 1); });
+  hold.addEventListener("pointerup", () => { held = false; Out.stop(); });
+  $("#durS").oninput = e => $("#durV").textContent = e.target.value;
+  $("#sweepS").onclick = () => {
+    seqToken++; Out.stop(); const id = ++sweeping, dur = +$("#durS").value * 1000, t0 = performance.now();
+    (function step() {
+      if (id !== sweeping) return;
+      const p = (performance.now() - t0) / dur;
+      if (p >= 1) { Out.stop(); return; }
+      const hz = 100 * 40 ** p; show(hz); $("#slideS").value = hzToPos(hz); Out.set([tone(hz)], 1);
+      requestAnimationFrame(step);
+    })();
+  };
+  $("#stopS").onclick = () => { sweeping++; seqToken++; Out.stop(); };
+  $("#markS").onclick = mark;
+  $("#clearS").onclick = () => { marks = []; store.set("marks", marks); renderMarks(); };
+  window.addEventListener("keydown", e => { if (current === "sweep" && e.code === "Space" && !e.target.matches("input,textarea,select,button")) { e.preventDefault(); mark(); } });
+  return { enter() { show(posToHz(+$("#slideS").value)); renderMarks(); }, leave() { sweeping++; held = false; } };
+})();
+
+/* ---------- boot ---------- */
+document.querySelectorAll("nav button").forEach(b => {
+  b.addEventListener("click", () => setMode(b.dataset.mode));
+  b.addEventListener("pointerenter", () => { if ($("#ticks").checked) Out.burst(+b.dataset.tick, 35, 0.9); });
+});
+window.addEventListener("blur", () => { seqToken++; Out.stop(); });
+document.addEventListener("visibilitychange", () => { if (document.hidden) { seqToken++; Out.stop(); } });
+$("#mirror").checked = store.get("mirror", false);
+$("#mirror").onchange = e => { store.set("mirror", e.target.checked); Out.stop(); };
+Out.connect();
+setMode(modes[store.get("mode", "theremin")] ? store.get("mode", "theremin") : "theremin");
+</script>
+</body>
+</html>
